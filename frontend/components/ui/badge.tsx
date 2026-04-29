@@ -63,9 +63,22 @@ export function SeverityBadge({
   severity,
   className,
 }: {
-  severity: ReportSeverity;
+  severity: ReportSeverity | null | undefined;
   className?: string;
 }) {
+  if (!severity) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border",
+          "bg-gray-50 text-gray-400 border-gray-200",
+          className
+        )}
+      >
+        Pending
+      </span>
+    );
+  }
   return (
     <span
       className={cn(

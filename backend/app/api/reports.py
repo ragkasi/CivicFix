@@ -39,7 +39,7 @@ async def list_reports(
     severity: ReportSeverity | None = Query(None),
     department_id: UUID | None = Query(None),
     bbox: str | None = Query(None, description="minLng,minLat,maxLng,maxLat"),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
     service: ReportService = Depends(get_report_service),
 ):
@@ -77,7 +77,10 @@ async def update_report_status(
     body: UpdateStatusRequest,
     service: ReportService = Depends(get_report_service),
 ):
-    report = await service.update_status(report_id, body)
+    try:
+        report = await service.update_status(report_id, body)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return report
@@ -89,7 +92,12 @@ async def assign_department(
     body: AssignDepartmentRequest,
     service: ReportService = Depends(get_report_service),
 ):
-    report = await service.assign_department(report_id, body)
+    try:
+        report = await service.assign_department(report_id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return report

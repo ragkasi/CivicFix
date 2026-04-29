@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.schemas.departments import DepartmentResponse
 from app.services.department_service import DepartmentService
@@ -14,4 +14,7 @@ def get_department_service() -> DepartmentService:
 async def list_departments(
     service: DepartmentService = Depends(get_department_service),
 ):
-    return await service.list_departments()
+    try:
+        return await service.list_departments()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))

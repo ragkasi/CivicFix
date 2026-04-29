@@ -1,4 +1,4 @@
-"""Report service — real implementation for Phase 3."""
+"""Report service — Phase 4 complete implementation."""
 import asyncio
 from uuid import UUID
 
@@ -6,18 +6,20 @@ from app.db.supabase import get_supabase_client
 from app.schemas.reports import (
     AssignDepartmentRequest,
     CreateReportRequest,
+    DepartmentInfo,
     ReportCategory,
     ReportDetailResponse,
+    ReportImageResponse,
     ReportResponse,
     ReportSeverity,
     ReportStatus,
+    StatusEventResponse,
     UpdateStatusRequest,
 )
 from app.schemas.tracking import TrackingResponse
 
 
 def _run(fn):
-    """Run a synchronous Supabase client call without blocking the event loop."""
     return asyncio.to_thread(fn)
 
 
@@ -25,7 +27,7 @@ class ReportService:
     def _client(self):
         return get_supabase_client()
 
-    # ─── Create ──────────────────────────────────────────────────────────────
+    # ─── Create ───────────────────────────────────────────────────────────────
 
     async def create_report(self, data: CreateReportRequest) -> ReportResponse:
         client = self._client()
@@ -35,9 +37,7 @@ class ReportService:
             "latitude": data.latitude,
             "longitude": data.longitude,
             "status": ReportStatus.submitted.value,
-            # Default category; AI pipeline overwrites this in Phase 4
             "category": ReportCategory.other.value,
-            # severity left NULL; AI pipeline sets it in Phase 4
         }
         if data.address:
             insert_data["address"] = data.address
@@ -49,13 +49,11 @@ class ReportService:
         result = await _run(
             lambda: client.table("reports").insert(insert_data).execute()
         )
-
         if not result.data:
             raise RuntimeError("Database did not return the created report")
 
         row = result.data[0]
 
-        # Store image reference if an uploaded image path was provided
         if data.image_path:
             await _run(
                 lambda: client.table("report_images")
@@ -71,20 +69,44 @@ class ReportService:
             created_at=row["created_at"],
         )
 
-    # ─── Read ─────────────────────────────────────────────────────────────────
+    # ─── Read ──────────────────────────────────────────────────────────────────
 
     async def get_report(self, report_id: UUID) -> ReportDetailResponse | None:
+        """Fetch full report detail including images, status events, and department."""
         client = self._client()
+
+        # Join departments via FK for the department object
         result = await _run(
             lambda: client.table("reports")
-            .select("*")
+            .select("*, departments(id, slug, name)")
             .eq("id", str(report_id))
             .limit(1)
             .execute()
         )
         if not result.data:
             return None
-        return self._to_detail(result.data[0])
+
+        row = result.data[0]
+
+        # Parallel fetch of images and status events
+        images_res, events_res = await asyncio.gather(
+            _run(
+                lambda: client.table("report_images")
+                .select("*")
+                .eq("report_id", str(report_id))
+                .order("created_at")
+                .execute()
+            ),
+            _run(
+                lambda: client.table("status_events")
+                .select("*")
+                .eq("report_id", str(report_id))
+                .order("created_at")
+                .execute()
+            ),
+        )
+
+        return self._to_detail_full(row, images_res.data, events_res.data)
 
     async def list_reports(
         self,
@@ -98,13 +120,10 @@ class ReportService:
     ) -> list[ReportDetailResponse]:
         client = self._client()
 
-        # Build query with chained filters
-        # bbox (minLng,minLat,maxLng,maxLat) filtering is done in Phase 4+
-        # via PostGIS ST_MakeEnvelope — skipped here for simplicity.
         def _query():
             q = (
                 client.table("reports")
-                .select("*")
+                .select("*, departments(id, slug, name)")
                 .order("created_at", desc=True)
                 .limit(limit)
                 .offset(offset)
@@ -117,6 +136,7 @@ class ReportService:
                 q = q.eq("severity", severity.value)
             if department_id:
                 q = q.eq("department_id", str(department_id))
+            # bbox filtering via PostGIS deferred to Phase 5 (map)
             return q.execute()
 
         result = await _run(_query)
@@ -131,8 +151,6 @@ class ReportService:
             .select(
                 "public_tracking_token, status, category, severity, "
                 "address, created_at, updated_at"
-                # Deliberately excludes contact_email, contact_phone,
-                # internal admin notes, and private IDs.
             )
             .eq("public_tracking_token", token)
             .limit(1)
@@ -156,19 +174,91 @@ class ReportService:
     async def update_status(
         self, report_id: UUID, data: UpdateStatusRequest
     ) -> ReportDetailResponse | None:
-        # Phase 4: persist status change, append to status_events, trigger notification
-        return None
+        client = self._client()
+
+        # Fetch existing to get old_status and confirm existence
+        existing = await _run(
+            lambda: client.table("reports")
+            .select("id, status")
+            .eq("id", str(report_id))
+            .limit(1)
+            .execute()
+        )
+        if not existing.data:
+            return None
+
+        old_status = existing.data[0]["status"]
+
+        # Update status on the report
+        await _run(
+            lambda: client.table("reports")
+            .update({"status": data.status.value})
+            .eq("id", str(report_id))
+            .execute()
+        )
+
+        # Append to audit log
+        event: dict = {
+            "report_id": str(report_id),
+            "old_status": old_status,
+            "new_status": data.status.value,
+        }
+        if data.note:
+            event["note"] = data.note
+        if data.public_note:
+            event["public_note"] = data.public_note
+
+        await _run(lambda: client.table("status_events").insert(event).execute())
+
+        return await self.get_report(report_id)
 
     async def assign_department(
         self, report_id: UUID, data: AssignDepartmentRequest
     ) -> ReportDetailResponse | None:
-        # Phase 4: set department_id, log status event
-        return None
+        client = self._client()
+
+        # Verify report exists
+        existing = await _run(
+            lambda: client.table("reports")
+            .select("id")
+            .eq("id", str(report_id))
+            .limit(1)
+            .execute()
+        )
+        if not existing.data:
+            return None
+
+        # Verify department exists
+        dept = await _run(
+            lambda: client.table("departments")
+            .select("id")
+            .eq("id", str(data.department_id))
+            .limit(1)
+            .execute()
+        )
+        if not dept.data:
+            raise ValueError(f"Department {data.department_id} not found")
+
+        # Assign department
+        await _run(
+            lambda: client.table("reports")
+            .update({"department_id": str(data.department_id)})
+            .eq("id", str(report_id))
+            .execute()
+        )
+
+        return await self.get_report(report_id)
 
     # ─── Helpers ──────────────────────────────────────────────────────────────
 
     @staticmethod
+    def _dept_from_row(row: dict) -> DepartmentInfo | None:
+        d = row.get("departments")
+        return DepartmentInfo(id=d["id"], slug=d["slug"], name=d["name"]) if d else None
+
+    @staticmethod
     def _to_detail(row: dict) -> ReportDetailResponse:
+        """Lightweight mapping used for list endpoints (no images/events)."""
         return ReportDetailResponse(
             id=row["id"],
             description=row["description"],
@@ -179,7 +269,53 @@ class ReportService:
             category=row.get("category"),
             severity=row.get("severity"),
             department_id=row.get("department_id"),
+            department=ReportService._dept_from_row(row),
             tracking_token=row["public_tracking_token"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _to_detail_full(
+        row: dict,
+        image_rows: list[dict],
+        event_rows: list[dict],
+    ) -> ReportDetailResponse:
+        """Full mapping used for single-report detail endpoint."""
+        images = [
+            ReportImageResponse(
+                id=img["id"],
+                storage_path=img["storage_path"],
+                public_url=img.get("public_url"),
+                created_at=img["created_at"],
+            )
+            for img in image_rows
+        ]
+        events = [
+            StatusEventResponse(
+                id=ev["id"],
+                old_status=ev.get("old_status"),
+                new_status=ev["new_status"],
+                note=ev.get("note"),
+                public_note=ev.get("public_note"),
+                created_at=ev["created_at"],
+            )
+            for ev in event_rows
+        ]
+        return ReportDetailResponse(
+            id=row["id"],
+            description=row["description"],
+            latitude=row["latitude"],
+            longitude=row["longitude"],
+            address=row.get("address"),
+            status=row["status"],
+            category=row.get("category"),
+            severity=row.get("severity"),
+            department_id=row.get("department_id"),
+            department=ReportService._dept_from_row(row),
+            tracking_token=row["public_tracking_token"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            images=images,
+            status_events=events,
         )

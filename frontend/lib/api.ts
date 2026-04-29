@@ -25,7 +25,6 @@ export const api = {
   health: () => fetchApi<{ status: string; version: string }>("/health"),
 
   upload: {
-    /** Upload a report image; returns storage path and public URL. */
     image: async (file: File): Promise<UploadImageResponse> => {
       const form = new FormData();
       form.append("file", file);
@@ -47,15 +46,20 @@ export const api = {
         body: JSON.stringify(body),
       }),
 
-    /** List reports with optional filters. */
+    /** List reports with optional filters (admin). */
     list: (params?: Partial<ListReportsParams>) => {
-      const qs = params
-        ? "?" + new URLSearchParams(params as Record<string, string>).toString()
+      const filtered = params
+        ? Object.fromEntries(
+            Object.entries(params).filter(([, v]) => v !== undefined && v !== "")
+          )
+        : {};
+      const qs = Object.keys(filtered).length
+        ? "?" + new URLSearchParams(filtered as Record<string, string>).toString()
         : "";
       return fetchApi<ReportDetail[]>(`/api/reports${qs}`);
     },
 
-    /** Get a single report by ID. */
+    /** Get a single report by ID (admin — includes images and status events). */
     get: (id: string) => fetchApi<ReportDetail>(`/api/reports/${id}`),
 
     /** Update report status (admin). */
@@ -66,7 +70,7 @@ export const api = {
       }),
 
     /** Assign report to a department (admin). */
-    assignDepartment: (id: string, body: { department_id: string }) =>
+    assignDepartment: (id: string, body: AssignDepartmentBody) =>
       fetchApi<ReportDetail>(`/api/reports/${id}/department`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -78,13 +82,12 @@ export const api = {
   },
 
   tracking: {
-    /** Public tracking endpoint — no auth required. */
     get: (token: string) =>
       fetchApi<TrackingReport>(`/api/tracking/${token}`),
   },
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Enums / union types ──────────────────────────────────────────────────────
 
 export type ReportSeverity = "low" | "medium" | "high" | "critical";
 export type ReportStatus =
@@ -107,6 +110,32 @@ export type ReportCategory =
   | "snow_or_ice"
   | "other";
 
+// ─── Shared nested types ──────────────────────────────────────────────────────
+
+export interface DepartmentInfo {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface ReportImage {
+  id: string;
+  storage_path: string;
+  public_url: string | null;
+  created_at: string;
+}
+
+export interface StatusEvent {
+  id: string;
+  old_status: string | null;
+  new_status: string;
+  note: string | null;
+  public_note: string | null;
+  created_at: string;
+}
+
+// ─── Request / response types ─────────────────────────────────────────────────
+
 export interface UploadImageResponse {
   storage_path: string;
   public_url: string;
@@ -117,7 +146,6 @@ export interface CreateReportBody {
   latitude: number;
   longitude: number;
   address?: string;
-  /** Storage path returned by POST /api/upload/image */
   image_path?: string;
   contact_email?: string;
   contact_phone?: string;
@@ -138,23 +166,31 @@ export interface ReportDetail extends ReportResponse {
   address: string | null;
   severity: ReportSeverity | null;
   department_id: string | null;
+  department: DepartmentInfo | null;
   updated_at: string;
+  images: ReportImage[];
+  status_events: StatusEvent[];
+  ai_analysis: null;
 }
 
 export interface ListReportsParams {
-  status: ReportStatus;
-  category: ReportCategory;
-  severity: ReportSeverity;
-  department_id: string;
-  bbox: string;
-  limit: string;
-  offset: string;
+  status?: ReportStatus;
+  category?: ReportCategory;
+  severity?: ReportSeverity;
+  department_id?: string;
+  bbox?: string;
+  limit?: string;
+  offset?: string;
 }
 
 export interface UpdateStatusBody {
   status: ReportStatus;
   note?: string;
   public_note?: string;
+}
+
+export interface AssignDepartmentBody {
+  department_id: string;
 }
 
 export interface Department {

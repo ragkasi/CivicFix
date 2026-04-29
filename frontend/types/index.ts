@@ -1,13 +1,16 @@
-// Re-export all shared API types.
 export type {
+  AssignDepartmentBody,
   CreateReportBody,
   Department,
+  DepartmentInfo,
   ListReportsParams,
   ReportCategory,
   ReportDetail,
+  ReportImage,
   ReportResponse,
   ReportSeverity,
   ReportStatus,
+  StatusEvent,
   TrackingReport,
   UpdateStatusBody,
   UploadImageResponse,

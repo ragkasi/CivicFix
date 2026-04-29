@@ -35,41 +35,42 @@ class ReportCategory(str, Enum):
     other = "other"
 
 
+# ─── Nested / embedded schemas ────────────────────────────────────────────────
+
+class DepartmentInfo(BaseModel):
+    """Compact department object embedded in report responses."""
+    id: UUID
+    slug: str
+    name: str
+
+
+class ReportImageResponse(BaseModel):
+    id: UUID
+    storage_path: str
+    public_url: str | None = None
+    created_at: datetime
+
+
+class StatusEventResponse(BaseModel):
+    id: UUID
+    old_status: str | None = None
+    new_status: str
+    note: str | None = None
+    public_note: str | None = None
+    created_at: datetime
+
+
+# ─── Request schemas ──────────────────────────────────────────────────────────
+
 class CreateReportRequest(BaseModel):
     description: str = Field(..., min_length=10, max_length=2000)
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     address: str | None = None
-    # Storage path returned by POST /api/upload/image; stored in report_images
+    # Storage path returned by POST /api/upload/image
     image_path: str | None = None
     contact_email: str | None = None
     contact_phone: str | None = None
-
-
-class ReportResponse(BaseModel):
-    """Returned on successful report creation."""
-    id: UUID
-    status: ReportStatus
-    category: ReportCategory | None = None
-    # API field; maps to public_tracking_token in the database
-    tracking_token: str
-    created_at: datetime
-
-
-class ReportDetailResponse(BaseModel):
-    """Full report detail for admin views and GET /api/reports/{id}."""
-    id: UUID
-    description: str
-    latitude: float
-    longitude: float
-    address: str | None
-    status: ReportStatus
-    category: ReportCategory | None = None
-    severity: ReportSeverity | None = None
-    department_id: UUID | None = None
-    tracking_token: str
-    created_at: datetime
-    updated_at: datetime
 
 
 class UpdateStatusRequest(BaseModel):
@@ -80,3 +81,38 @@ class UpdateStatusRequest(BaseModel):
 
 class AssignDepartmentRequest(BaseModel):
     department_id: UUID
+
+
+# ─── Response schemas ─────────────────────────────────────────────────────────
+
+class ReportResponse(BaseModel):
+    """Returned on successful report creation."""
+    id: UUID
+    status: ReportStatus
+    category: ReportCategory | None = None
+    tracking_token: str
+    created_at: datetime
+
+
+class ReportDetailResponse(BaseModel):
+    """Full report detail — used for admin views and GET /api/reports/{id}.
+
+    images, status_events, and department are empty/None for list endpoints
+    and fully populated for the single-report detail endpoint.
+    """
+    id: UUID
+    description: str
+    latitude: float
+    longitude: float
+    address: str | None = None
+    status: ReportStatus
+    category: ReportCategory | None = None
+    severity: ReportSeverity | None = None
+    department_id: UUID | None = None
+    department: DepartmentInfo | None = None
+    tracking_token: str
+    created_at: datetime
+    updated_at: datetime
+    images: list[ReportImageResponse] = []
+    status_events: list[StatusEventResponse] = []
+    ai_analysis: None = None  # Phase 5
