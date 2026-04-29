@@ -1,5 +1,4 @@
-// Re-export shared API types.
-// As the app grows, domain-specific types are added here.
+// Re-export all shared API types.
 export type {
   CreateReportBody,
   Department,
@@ -9,6 +8,7 @@ export type {
   ReportResponse,
   ReportSeverity,
   ReportStatus,
-  TrackingInfo,
+  TrackingReport,
   UpdateStatusBody,
+  UploadImageResponse,
 } from "@/lib/api";

@@ -1,6 +1,8 @@
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
+// ─── Fetch helper ─────────────────────────────────────────────────────────────
+
 async function fetchApi<T>(
   path: string,
   options: RequestInit = {}
@@ -10,30 +12,42 @@ async function fetchApi<T>(
     headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
   });
-
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`API ${res.status}: ${text}`);
   }
-
   return res.json() as Promise<T>;
 }
 
-// ─── System ──────────────────────────────────────────────────────────────────
+// ─── API client ───────────────────────────────────────────────────────────────
 
 export const api = {
   health: () => fetchApi<{ status: string; version: string }>("/health"),
 
-  // ─── Reports ─────────────────────────────────────────────────────────────
+  upload: {
+    /** Upload a report image; returns storage path and public URL. */
+    image: async (file: File): Promise<UploadImageResponse> => {
+      const form = new FormData();
+      form.append("file", file);
+      const url = `${BASE_URL}/api/upload/image`;
+      const res = await fetch(url, { method: "POST", body: form });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Upload failed ${res.status}: ${text}`);
+      }
+      return res.json() as Promise<UploadImageResponse>;
+    },
+  },
+
   reports: {
-    /** Phase 3: submit a new report */
+    /** Submit a new civic issue report. */
     create: (body: CreateReportBody) =>
       fetchApi<ReportResponse>("/api/reports", {
         method: "POST",
         body: JSON.stringify(body),
       }),
 
-    /** Phase 3: list reports with optional filters */
+    /** List reports with optional filters. */
     list: (params?: Partial<ListReportsParams>) => {
       const qs = params
         ? "?" + new URLSearchParams(params as Record<string, string>).toString()
@@ -41,17 +55,17 @@ export const api = {
       return fetchApi<ReportDetail[]>(`/api/reports${qs}`);
     },
 
-    /** Phase 3: get a single report by ID */
+    /** Get a single report by ID. */
     get: (id: string) => fetchApi<ReportDetail>(`/api/reports/${id}`),
 
-    /** Phase 3: update report status (admin) */
+    /** Update report status (admin). */
     updateStatus: (id: string, body: UpdateStatusBody) =>
       fetchApi<ReportDetail>(`/api/reports/${id}/status`, {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
 
-    /** Phase 3: assign report to a department (admin) */
+    /** Assign report to a department (admin). */
     assignDepartment: (id: string, body: { department_id: string }) =>
       fetchApi<ReportDetail>(`/api/reports/${id}/department`, {
         method: "PATCH",
@@ -59,18 +73,18 @@ export const api = {
       }),
   },
 
-  // ─── Departments ─────────────────────────────────────────────────────────
   departments: {
     list: () => fetchApi<Department[]>("/api/departments"),
   },
 
-  // ─── Resident tracking (public, no auth) ─────────────────────────────────
   tracking: {
-    get: (token: string) => fetchApi<TrackingInfo>(`/api/tracking/${token}`),
+    /** Public tracking endpoint — no auth required. */
+    get: (token: string) =>
+      fetchApi<TrackingReport>(`/api/tracking/${token}`),
   },
 };
 
-// ─── Types (Phase 3: move to types/index.ts when schemas stabilize) ──────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ReportSeverity = "low" | "medium" | "high" | "critical";
 export type ReportStatus =
@@ -93,11 +107,17 @@ export type ReportCategory =
   | "snow_or_ice"
   | "other";
 
+export interface UploadImageResponse {
+  storage_path: string;
+  public_url: string;
+}
+
 export interface CreateReportBody {
   description: string;
   latitude: number;
   longitude: number;
   address?: string;
+  /** Storage path returned by POST /api/upload/image */
   image_path?: string;
   contact_email?: string;
   contact_phone?: string;
@@ -106,6 +126,7 @@ export interface CreateReportBody {
 export interface ReportResponse {
   id: string;
   status: ReportStatus;
+  category: ReportCategory | null;
   tracking_token: string;
   created_at: string;
 }
@@ -115,7 +136,6 @@ export interface ReportDetail extends ReportResponse {
   latitude: number;
   longitude: number;
   address: string | null;
-  category: ReportCategory | null;
   severity: ReportSeverity | null;
   department_id: string | null;
   updated_at: string;
@@ -147,9 +167,13 @@ export interface Department {
   created_at: string;
 }
 
-export interface TrackingInfo {
-  status: string;
-  category: string | null;
+export interface TrackingReport {
+  tracking_token: string;
+  status: ReportStatus;
+  category: ReportCategory | null;
+  severity: ReportSeverity | null;
+  address: string | null;
   created_at: string;
+  updated_at: string | null;
   public_note: string | null;
 }

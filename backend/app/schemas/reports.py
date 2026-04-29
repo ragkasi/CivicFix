@@ -40,23 +40,24 @@ class CreateReportRequest(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     address: str | None = None
-    # Single image MVP; stored in report_images table for extensibility
+    # Storage path returned by POST /api/upload/image; stored in report_images
     image_path: str | None = None
     contact_email: str | None = None
     contact_phone: str | None = None
 
 
 class ReportResponse(BaseModel):
+    """Returned on successful report creation."""
     id: UUID
     status: ReportStatus
-    # API field name; maps to public_tracking_token in the database
+    category: ReportCategory | None = None
+    # API field; maps to public_tracking_token in the database
     tracking_token: str
     created_at: datetime
 
-    model_config = {"from_attributes": True}
-
 
 class ReportDetailResponse(BaseModel):
+    """Full report detail for admin views and GET /api/reports/{id}."""
     id: UUID
     description: str
     latitude: float
@@ -69,10 +70,6 @@ class ReportDetailResponse(BaseModel):
     tracking_token: str
     created_at: datetime
     updated_at: datetime
-    # AI analysis, images, duplicate candidates, and status history
-    # are added in Phase 4 and Phase 5.
-
-    model_config = {"from_attributes": True}
 
 
 class UpdateStatusRequest(BaseModel):

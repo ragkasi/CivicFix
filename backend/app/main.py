@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.api import departments, reports, tracking
+from app.api import departments, reports, tracking, upload
 
 settings = get_settings()
 
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
 app.include_router(departments.router, prefix="/api/departments", tags=["departments"])
 app.include_router(tracking.router, prefix="/api/tracking", tags=["tracking"])
+app.include_router(upload.router, prefix="/api/upload", tags=["upload"])
 
 
 @app.get("/health", tags=["system"])

@@ -26,7 +26,10 @@ async def create_report(
     body: CreateReportRequest,
     service: ReportService = Depends(get_report_service),
 ):
-    return await service.create_report(body)
+    try:
+        return await service.create_report(body)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 @router.get("", response_model=list[ReportDetailResponse])
@@ -40,15 +43,18 @@ async def list_reports(
     offset: int = Query(0, ge=0),
     service: ReportService = Depends(get_report_service),
 ):
-    return await service.list_reports(
-        status=status,
-        category=category,
-        severity=severity,
-        department_id=department_id,
-        bbox=bbox,
-        limit=limit,
-        offset=offset,
-    )
+    try:
+        return await service.list_reports(
+            status=status,
+            category=category,
+            severity=severity,
+            department_id=department_id,
+            bbox=bbox,
+            limit=limit,
+            offset=offset,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 @router.get("/{report_id}", response_model=ReportDetailResponse)
@@ -56,7 +62,10 @@ async def get_report(
     report_id: UUID,
     service: ReportService = Depends(get_report_service),
 ):
-    report = await service.get_report(report_id)
+    try:
+        report = await service.get_report(report_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return report

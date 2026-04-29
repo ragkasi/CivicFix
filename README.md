@@ -2,9 +2,9 @@
 
 AI-powered civic issue reporting and routing platform. Residents submit local infrastructure issues with photos, descriptions, and map locations. AI classifies the issue, estimates severity, detects duplicates, and routes the report to the correct city department.
 
-## Current Phase: Phase 2 — Supabase Database Foundation
+## Current Phase: Phase 3 — Resident Report Submission MVP
 
-Backend and frontend foundations are in place. The database schema is defined and validated. Full business logic and AI features are built in Phases 3–6.
+Residents can submit reports and track them via a public token. The backend stores reports in Supabase, handles image uploads to Supabase Storage, and returns tracking tokens. AI features, the admin dashboard, and realtime updates are built in Phases 4–6.
 
 ## Local Development
 
@@ -12,93 +12,49 @@ Backend and frontend foundations are in place. The database schema is defined an
 
 - Python 3.12+
 - Node.js 20+
-- A Supabase project (free tier works for development)
+- A Supabase project with migrations applied (see Phase 2 setup)
 
-### 1. Create a Supabase Project
+### 1. Apply Database Migrations (if not done in Phase 2)
 
-1. Go to [supabase.com](https://supabase.com) and create a new project
-2. Copy the **Project URL** and **API keys** from Settings → API
-3. Copy the **Database connection string** from Settings → Database (use the direct connection URL, not the pooler, for local development)
-
-### 2. Apply Database Migrations
-
-In the Supabase **SQL Editor**, run these files in order:
-
+In the Supabase SQL Editor:
 ```
-supabase/migrations/001_extensions.sql   -- postgis, vector, pgcrypto
-supabase/migrations/002_schema.sql       -- all 9 tables + indexes + trigger
-supabase/seed/seed_departments.sql       -- 7 city departments
+supabase/migrations/001_extensions.sql
+supabase/migrations/002_schema.sql
+supabase/seed/seed_departments.sql
 ```
 
-Each file is idempotent and safe to re-run.
-
-### 3. Configure Environment Variables
+### 2. Configure Environment Variables
 
 ```bash
 # Backend
-cd backend
-cp ../.env.example .env
-# Edit backend/.env — fill in:
-#   DATABASE_URL=postgresql+asyncpg://postgres.[ref]:[pass]@aws-...supabase.com:5432/postgres
-#   SUPABASE_URL=https://xxx.supabase.co
-#   SUPABASE_SERVICE_ROLE_KEY=eyJ...
-#   SUPABASE_ANON_KEY=eyJ...
+cd backend && cp ../.env.example .env
+# Fill in: DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+#           SUPABASE_ANON_KEY, SUPABASE_STORAGE_BUCKET
 
 # Frontend
-cd frontend
-cp ../.env.example .env.local
-# Edit frontend/.env.local — fill in:
-#   NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-#   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-#   NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+cd frontend && cp ../.env.example .env.local
+# Fill in: NEXT_PUBLIC_API_BASE_URL, NEXT_PUBLIC_SUPABASE_URL,
+#           NEXT_PUBLIC_SUPABASE_ANON_KEY
 ```
 
-### 4. Run the Backend
+### 3. Create Supabase Storage Bucket
+
+In the Supabase dashboard → Storage → Create bucket:
+- Name: `report-images`
+- Public: ✓ (so uploaded photos are accessible via public URL)
+
+### 4. Start the Backend
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Backend: **http://localhost:8000**
-Swagger: **http://localhost:8000/docs**
+Backend: **http://localhost:8000** | Swagger: **http://localhost:8000/docs**
 
-### 5. Verify Database Setup
-
-```bash
-cd backend
-python scripts/check_database.py
-```
-
-Expected output when fully configured:
-
-```
-CivicFix - Database Check
-----------------------------------------
-  [PASS] Database connection
-  [PASS] Extension: postgis
-  [PASS] Extension: vector
-  [PASS] Extension: pgcrypto
-  [PASS] Table: profiles
-  ... (all 9 tables)
-  [PASS] Departments: 7 (fully seeded)
-
-Result: All checks passed.
-```
-
-### 6. Seed Departments (alternative to SQL file)
-
-```bash
-cd backend
-python scripts/seed_departments.py
-```
-
-This upserts the 7 initial departments via the Supabase Python client. Safe to run multiple times.
-
-### 7. Run the Frontend
+### 5. Start the Frontend
 
 ```bash
 cd frontend
@@ -108,20 +64,32 @@ npm run dev
 
 Frontend: **http://localhost:3000**
 
-### 8. Run Tests
+### 6. Test Report Submission
+
+1. Open **http://localhost:3000/report/new**
+2. Fill in description (min 10 chars), add a photo, enter lat/lng
+3. Click Submit — you'll be redirected to `/track/[token]`
+4. The tracking page shows report status, category, and updates
+
+### 7. Run Tests
 
 ```bash
 cd backend
-pytest                     # health tests pass; DB tests skip without credentials
-pytest tests/test_db.py -v # DB tests — require real Supabase credentials
+pytest                     # 9 pass (validation), 25 skip (DB)
+pytest tests/test_reports.py -v   # report + upload tests
 ```
 
 ## Project Structure
 
 ```
-frontend/          Next.js resident and admin UI
-backend/           FastAPI backend API
-  scripts/         Database check and seed scripts
+frontend/          Next.js resident portal and admin dashboard
+  app/report/new/  Report submission form
+  app/track/[token]/ Public status tracking page
+backend/           FastAPI API
+  app/api/         Route handlers (reports, tracking, upload, departments)
+  app/services/    Business logic
+  app/db/          SQLAlchemy + Supabase client + image upload helper
+  scripts/         DB check and seed scripts
 mcp-server/        city-ops-mcp MCP server (Phase 7)
 supabase/
   migrations/      001_extensions.sql, 002_schema.sql
@@ -129,6 +97,17 @@ supabase/
 docs/              Supporting documentation
 .claude/           Claude agents, skills, commands, hooks
 ```
+
+## API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/health` | None | Health check |
+| POST | `/api/reports` | None | Submit a report |
+| GET | `/api/reports` | None | List reports |
+| GET | `/api/tracking/{token}` | None | Resident tracking |
+| POST | `/api/upload/image` | None | Upload report photo |
+| GET | `/api/departments` | None | List departments |
 
 ## Documentation
 
@@ -144,27 +123,3 @@ docs/              Supporting documentation
 | [BACKEND_SPEC.md](BACKEND_SPEC.md) | Backend structure and services |
 | [PROJECT_PLAN.md](PROJECT_PLAN.md) | Phase-by-phase plan |
 | [DEMO_SCRIPT.md](DEMO_SCRIPT.md) | Demo walkthrough |
-
-## Database Schema (Phase 2)
-
-9 tables defined in `supabase/migrations/002_schema.sql`:
-
-| Table | Purpose |
-|-------|---------|
-| `profiles` | Resident and admin user metadata (extends Supabase auth) |
-| `departments` | City departments with slug, name, and category coverage |
-| `reports` | Civic issue reports with PostGIS geom + public_tracking_token |
-| `report_images` | Uploaded images (extensible — MVP shows one, table supports many) |
-| `ai_analysis` | AI classification outputs per report (Phase 4) |
-| `report_embeddings` | vector(1536) embeddings for duplicate detection (Phase 5) |
-| `duplicate_suggestions` | Candidate duplicate pairs for admin review (Phase 5) |
-| `status_events` | Append-only status transition audit log |
-| `notifications` | Outbound email/SMS notification log (Phase 6) |
-
-Key schema decisions:
-- Severity: `low / medium / high / critical` (string)
-- Status: `submitted / reviewed / assigned / in_progress / resolved / duplicate / rejected` (string)
-- Category: API slugs (`pothole`, `flooding`, `graffiti`, etc.)
-- `reports.geom` is auto-synced from `latitude`/`longitude` via a Postgres trigger
-- `report_embeddings.embedding` uses `vector(1536)` matching `text-embedding-3-small`
-- `departments.slug` is unique and used as the conflict-safe seed target
