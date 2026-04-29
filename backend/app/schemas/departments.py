@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class DepartmentResponse(BaseModel):
     id: UUID
+    slug: str
     name: str
     description: str | None = None
     contact_email: str | None = None

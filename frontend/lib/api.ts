@@ -139,6 +139,7 @@ export interface UpdateStatusBody {
 
 export interface Department {
   id: string;
+  slug: string;
   name: string;
   description: string | null;
   contact_email: string | null;

@@ -17,6 +17,8 @@ create table if not exists profiles (
 
 create table if not exists departments (
   id                uuid primary key default gen_random_uuid(),
+  -- URL-safe identifier used for routing logic and conflict-free seeding
+  slug              text unique not null,
   name              text not null,
   description       text,
   category_coverage text[] not null default '{}',
@@ -69,6 +71,8 @@ begin
 end;
 $$;
 
+-- Drop first to make this migration idempotent on re-runs
+drop trigger if exists trg_reports_geom on reports;
 create trigger trg_reports_geom
   before insert or update of latitude, longitude
   on reports
