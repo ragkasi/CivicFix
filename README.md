@@ -2,9 +2,13 @@
 
 AI-powered civic issue reporting and routing platform. Residents submit infrastructure issues with photos and map locations; AI classifies and routes them; city staff triage, assign, and resolve via an admin dashboard with map view.
 
-## Current Phase: Phase 7 — Duplicate Detection
+## Current Phase: Phase 8 — Supabase Realtime Dashboard Updates
 
-The full reporting + AI triage + duplicate detection + admin loop is working:
+The admin dashboard now updates in real-time via Supabase Realtime:
+- New report submissions show a "New reports available" banner
+- Status/category/severity updates appear in-place in the table
+- Live connection indicator in the dashboard header
+- Graceful degradation when Supabase env vars are missing
 - pgvector semantic similarity + PostGIS radius used to find duplicate reports
 - Duplicate suggestions stored in `duplicate_suggestions` table
 - "Possible Duplicates" panel on admin report detail with combined match score
@@ -130,6 +134,28 @@ Admins can override category, severity, and department at any time.
 To re-run AI analysis on an existing report: open `/admin/reports/[id]` → click "Analyse with AI".
 
 Without `OPENAI_API_KEY`, the pipeline uses a safe fallback (category=other, severity=medium) and logs a warning.
+
+## Supabase Realtime (Phase 8)
+
+The admin dashboard subscribes to the `reports` table via Supabase Realtime:
+
+| Event | Behavior |
+|-------|---------|
+| INSERT | Banner: "New reports available — click to refresh" |
+| UPDATE | Status/category/severity/department updated in-place in the table row |
+| DELETE | Row removed from current view |
+
+**Required env vars (frontend):**
+```
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+```
+
+**Required Supabase setup:**
+1. Apply `supabase/migrations/005_realtime.sql`
+2. In Supabase dashboard → Database → Replication → enable `reports` table
+
+Without the env vars, the dashboard shows "Realtime off" and works normally via manual refresh.
 
 ## Duplicate Detection (Phase 7)
 

@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type ReportDetail, type ReportCategory, type ReportSeverity, type ReportStatus } from "@/lib/api";
+import {
+  api,
+  type ReportCategory,
+  type ReportDetail,
+  type ReportSeverity,
+  type ReportStatus,
+} from "@/lib/api";
 import { StatusBadge, SeverityBadge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
+import { RealtimeStatusBadge } from "@/components/dashboard/RealtimeStatusBadge";
+import { useRealtimeReports } from "@/hooks/useRealtimeReports";
 
 const CATEGORY_LABELS: Record<string, string> = {
   pothole: "Pothole", streetlight: "Streetlight", flooding: "Flooding",
@@ -26,10 +34,14 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [hasNewReports, setHasNewReports] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [filterStatus, setFilterStatus] = useState<ReportStatus | "">("");
   const [filterCategory, setFilterCategory] = useState<ReportCategory | "">("");
   const [filterSeverity, setFilterSeverity] = useState<ReportSeverity | "">("");
+
+  // ─── API fetch ──────────────────────────────────────────────────────────────
 
   async function fetchReports(pg: number) {
     setLoading(true);
@@ -54,6 +66,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     setPage(0);
+    setHasNewReports(false);
     fetchReports(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterStatus, filterCategory, filterSeverity]);
@@ -64,15 +77,63 @@ export default function AdminPage() {
     fetchReports(next);
   }
 
+  async function handleRefreshBanner() {
+    setRefreshing(true);
+    setHasNewReports(false);
+    await fetchReports(0);
+    setPage(0);
+    setRefreshing(false);
+  }
+
+  // ─── Realtime callbacks (stable via useCallback) ─────────────────────────
+
+  const handleInsert = useCallback(() => {
+    // Show non-disruptive banner rather than auto-scrolling/reordering the list
+    setHasNewReports(true);
+  }, []);
+
+  const handleUpdate = useCallback((updated: Record<string, unknown>) => {
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === updated.id
+          ? {
+              ...r,
+              // Update only the fields that live in the reports table row
+              status: (updated.status as ReportStatus) ?? r.status,
+              category: (updated.category as ReportCategory | null) ?? r.category,
+              severity: (updated.severity as ReportSeverity | null) ?? r.severity,
+              department_id: (updated.department_id as string | null) ?? r.department_id,
+              updated_at: (updated.updated_at as string) ?? r.updated_at,
+            }
+          : r
+      )
+    );
+  }, []);
+
+  const handleDelete = useCallback((deleted: Record<string, unknown>) => {
+    setReports((prev) => prev.filter((r) => r.id !== deleted.id));
+  }, []);
+
+  const { status: rtStatus } = useRealtimeReports({
+    onInsert: handleInsert,
+    onUpdate: handleUpdate,
+    onDelete: handleDelete,
+  });
+
+  // ─── Render ──────────────────────────────────────────────────────────────
+
   return (
     <main className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div>
-          <Link href="/" className="text-sm text-blue-600 hover:underline">
-            ← Home
-          </Link>
-          <h1 className="text-2xl font-bold text-gray-900 mt-0.5">Admin Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <div>
+            <Link href="/" className="text-sm text-blue-600 hover:underline">
+              ← Home
+            </Link>
+            <h1 className="text-2xl font-bold text-gray-900 mt-0.5">Admin Dashboard</h1>
+          </div>
+          <RealtimeStatusBadge status={rtStatus} />
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -91,6 +152,23 @@ export default function AdminPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-6 space-y-4">
+
+        {/* New reports banner */}
+        {hasNewReports && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center justify-between">
+            <p className="text-sm text-blue-700 font-medium">
+              New reports are available.
+            </p>
+            <button
+              onClick={handleRefreshBanner}
+              disabled={refreshing}
+              className="text-sm font-semibold text-blue-600 hover:underline disabled:opacity-50"
+            >
+              {refreshing ? "Refreshing…" : "Refresh now"}
+            </button>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap gap-4">
           <div className="min-w-36">
@@ -143,7 +221,9 @@ export default function AdminPage() {
           </div>
           <div className="flex items-end">
             <button
-              onClick={() => { setFilterStatus(""); setFilterCategory(""); setFilterSeverity(""); }}
+              onClick={() => {
+                setFilterStatus(""); setFilterCategory(""); setFilterSeverity("");
+              }}
               className="text-sm text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50"
             >
               Clear filters
@@ -234,7 +314,7 @@ export default function AdminPage() {
             {/* Pagination */}
             <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
               <span className="text-sm text-gray-500">
-                Page {page + 1} · showing {reports.length} report{reports.length !== 1 ? "s" : ""}
+                Page {page + 1} · {reports.length} report{reports.length !== 1 ? "s" : ""}
               </span>
               <div className="flex gap-2">
                 <button
