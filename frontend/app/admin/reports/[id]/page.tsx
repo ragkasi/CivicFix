@@ -8,6 +8,7 @@ import {
   api,
   type AIAnalysis,
   type Department,
+  type DuplicateSuggestion,
   type ReportDetail,
   type ReportStatus,
 } from "@/lib/api";
@@ -28,6 +29,74 @@ function fmt(iso: string) {
     month: "short", day: "numeric", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
+}
+
+const CATEGORY_LABELS_SMALL: Record<string, string> = {
+  pothole: "Pothole", streetlight: "Streetlight", flooding: "Flooding",
+  sidewalk_damage: "Sidewalk", trash_overflow: "Trash", damaged_sign: "Sign",
+  road_hazard: "Road Hazard", graffiti: "Graffiti", snow_or_ice: "Snow/Ice", other: "Other",
+};
+
+function DuplicatesCard({ duplicates }: { duplicates: DuplicateSuggestion[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>Possible Duplicates</CardTitle>
+          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+            Admin review required
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {duplicates.length === 0 ? (
+          <p className="text-sm text-gray-400">No likely duplicates found.</p>
+        ) : (
+          <ol className="space-y-3">
+            {duplicates.map((d) => (
+              <li
+                key={d.candidate_report_id}
+                className="border border-amber-100 bg-amber-50 rounded-lg px-4 py-3 text-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-gray-800 truncate max-w-xs">
+                        {d.candidate_address ?? "No address"}
+                      </span>
+                      {d.candidate_category && (
+                        <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                          {CATEGORY_LABELS_SMALL[d.candidate_category] ?? d.candidate_category}
+                        </span>
+                      )}
+                      {d.candidate_status && (
+                        <span className="text-xs text-gray-500">{d.candidate_status}</span>
+                      )}
+                    </div>
+                    {d.candidate_description && (
+                      <p className="text-gray-500 text-xs line-clamp-2">{d.candidate_description}</p>
+                    )}
+                    <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                      <span>Match: <strong>{Math.round(d.combined_score * 100)}%</strong></span>
+                      <span>Semantic: {Math.round(d.semantic_score * 100)}%</span>
+                      <span>Distance: {Math.round(d.distance_meters)} m</span>
+                      {d.reason && <span className="italic">{d.reason}</span>}
+                    </div>
+                  </div>
+                  <Link
+                    href={`/admin/reports/${d.candidate_report_id}`}
+                    className="text-blue-600 hover:underline text-xs whitespace-nowrap shrink-0"
+                  >
+                    View →
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -139,6 +208,10 @@ export default function ReportDetailPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeMsg, setAnalyzeMsg] = useState<string | null>(null);
 
+  // Duplicate detection state
+  const [checkingDupes, setCheckingDupes] = useState(false);
+  const [dupesMsg, setDupesMsg] = useState<string | null>(null);
+
   async function loadReport() {
     try {
       const r = await api.reports.get(id);
@@ -163,6 +236,20 @@ export default function ReportDetailPage() {
     ]).finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function handleCheckDuplicates() {
+    setCheckingDupes(true);
+    setDupesMsg(null);
+    try {
+      await api.reports.findDuplicates(id);
+      await loadReport();
+      setDupesMsg("Duplicate check complete.");
+    } catch (e) {
+      setDupesMsg(e instanceof Error ? e.message : "Duplicate check failed");
+    } finally {
+      setCheckingDupes(false);
+    }
+  }
 
   async function handleAnalyze() {
     setAnalyzing(true);
@@ -325,6 +412,9 @@ export default function ReportDetailPage() {
           {/* AI Analysis panel */}
           <AIAnalysisCard analysis={report.ai_analysis} />
 
+          {/* Duplicate suggestions */}
+          <DuplicatesCard duplicates={report.duplicate_suggestions} />
+
           {/* Status history */}
           <Card>
             <CardHeader><CardTitle>Status History</CardTitle></CardHeader>
@@ -457,6 +547,29 @@ export default function ReportDetailPage() {
               {analyzeMsg && (
                 <p className={`text-sm text-center ${analyzeMsg.includes("complete") ? "text-green-600" : "text-red-600"}`}>
                   {analyzeMsg}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Check for Duplicates */}
+          <Card>
+            <CardHeader><CardTitle>Duplicate Detection</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-gray-500">
+                Find similar nearby reports using semantic embeddings and geolocation.
+                Requires AI analysis to have run first.
+              </p>
+              <button
+                onClick={handleCheckDuplicates}
+                disabled={checkingDupes}
+                className="w-full py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              >
+                {checkingDupes ? "Checking…" : "Check for Duplicates"}
+              </button>
+              {dupesMsg && (
+                <p className={`text-sm text-center ${dupesMsg.includes("complete") ? "text-green-600" : "text-red-600"}`}>
+                  {dupesMsg}
                 </p>
               )}
             </CardContent>

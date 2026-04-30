@@ -121,6 +121,19 @@ class AIService:
                     .execute()
                 )
 
+            # 8. Duplicate detection (runs after embedding is stored)
+            if embedding:
+                try:
+                    from app.services.duplicate_service import DuplicateService
+                    dup_service = DuplicateService()
+                    duplicates = await dup_service.find_duplicates(report_id)
+                    logger.info(
+                        f"Duplicate detection: report={report_id} found={len(duplicates)} candidates"
+                    )
+                except Exception as dup_exc:
+                    # Duplicate detection failure must not cancel the AI analysis results
+                    logger.warning(f"Duplicate detection failed for {report_id}: {dup_exc}")
+
             logger.info(
                 f"AI pipeline done: report={report_id} "
                 f"category={classification['category']} "

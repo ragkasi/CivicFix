@@ -2,9 +2,14 @@
 
 AI-powered civic issue reporting and routing platform. Residents submit infrastructure issues with photos and map locations; AI classifies and routes them; city staff triage, assign, and resolve via an admin dashboard with map view.
 
-## Current Phase: Phase 6 — AI Triage Pipeline
+## Current Phase: Phase 7 — Duplicate Detection
 
-The full reporting + AI triage + admin loop is working:
+The full reporting + AI triage + duplicate detection + admin loop is working:
+- pgvector semantic similarity + PostGIS radius used to find duplicate reports
+- Duplicate suggestions stored in `duplicate_suggestions` table
+- "Possible Duplicates" panel on admin report detail with combined match score
+- "Check for Duplicates" button triggers detection on demand
+- Admin must manually confirm duplicates — no auto-status changes
 - AI classifies reports in the background after submission (category, severity, department, summary)
 - Embeddings stored in report_embeddings for future duplicate detection
 - Admin can manually re-run AI analysis via "Analyse with AI" button
@@ -126,8 +131,23 @@ To re-run AI analysis on an existing report: open `/admin/reports/[id]` → clic
 
 Without `OPENAI_API_KEY`, the pipeline uses a safe fallback (category=other, severity=medium) and logs a warning.
 
+## Duplicate Detection (Phase 7)
+
+Uses **pgvector** (cosine similarity) + **PostGIS** (geographic radius) to find likely duplicate reports:
+
+```
+combined_score = 0.60 × semantic_similarity + 0.25 × location_score + 0.15 × recency_score
+```
+
+- Runs automatically after AI pipeline stores an embedding
+- Admin can also trigger it manually via "Check for Duplicates" button
+- Suggestions shown in admin detail page — admin must review and confirm
+- No reports are auto-marked as duplicate; status change is always manual
+
+Run detection requires: Supabase migration `004_duplicate_functions.sql` applied.
+
 ## Current Limitations
-- No duplicate detection yet (Phase 7)
+- No Supabase Realtime dashboard updates (Phase 8)
 - No duplicate detection yet (Phase 6)
 - No authentication (Phase 7)
 - No realtime updates (Phase 7)

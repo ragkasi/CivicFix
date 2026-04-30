@@ -66,6 +66,27 @@ export const api = {
     analyze: (id: string) =>
       fetchApi<AIAnalysis>(`/api/reports/${id}/analyze`, { method: "POST" }),
 
+    /** Run duplicate detection for a report (admin). */
+    findDuplicates: (
+      id: string,
+      opts?: { radius_meters?: number; similarity_threshold?: number; limit?: number }
+    ) => {
+      const qs = opts
+        ? "?" +
+          new URLSearchParams(
+            Object.fromEntries(
+              Object.entries(opts)
+                .filter(([, v]) => v !== undefined)
+                .map(([k, v]) => [k, String(v)])
+            )
+          ).toString()
+        : "";
+      return fetchApi<DuplicateSuggestion[]>(
+        `/api/reports/${id}/duplicates${qs}`,
+        { method: "POST" }
+      );
+    },
+
     /** Update report status (admin). */
     updateStatus: (id: string, body: UpdateStatusBody) =>
       fetchApi<ReportDetail>(`/api/reports/${id}/status`, {
@@ -188,6 +209,7 @@ export interface ReportDetail extends ReportResponse {
   images: ReportImage[];
   status_events: StatusEvent[];
   ai_analysis: AIAnalysis | null;
+  duplicate_suggestions: DuplicateSuggestion[];
 }
 
 export interface ListReportsParams {
@@ -218,6 +240,20 @@ export interface Department {
   contact_email: string | null;
   category_coverage: string[];
   created_at: string;
+}
+
+export interface DuplicateSuggestion {
+  candidate_report_id: string;
+  candidate_description: string | null;
+  candidate_category: string | null;
+  candidate_severity: string | null;
+  candidate_status: string | null;
+  candidate_address: string | null;
+  candidate_created_at: string | null;
+  semantic_score: number;
+  distance_meters: number;
+  combined_score: number;
+  reason: string | null;
 }
 
 export interface AIAnalysis {

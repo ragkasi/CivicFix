@@ -60,6 +60,21 @@ class StatusEventResponse(BaseModel):
     created_at: datetime
 
 
+class DuplicateSuggestionResponse(BaseModel):
+    """A candidate duplicate surfaced by the duplicate detection pipeline."""
+    candidate_report_id: UUID
+    candidate_description: str | None = None
+    candidate_category: str | None = None
+    candidate_severity: str | None = None
+    candidate_status: str | None = None
+    candidate_address: str | None = None
+    candidate_created_at: datetime | None = None
+    semantic_score: float
+    distance_meters: float
+    combined_score: float
+    reason: str | None = None
+
+
 class AIAnalysisResponse(BaseModel):
     """AI triage output stored in the ai_analysis table."""
     id: UUID
@@ -130,3 +145,4 @@ class ReportDetailResponse(BaseModel):
     images: list[ReportImageResponse] = []
     status_events: list[StatusEventResponse] = []
     ai_analysis: AIAnalysisResponse | None = None
+    duplicate_suggestions: list[DuplicateSuggestionResponse] = []

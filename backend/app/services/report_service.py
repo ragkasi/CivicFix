@@ -9,6 +9,7 @@ from app.schemas.reports import (
     AssignDepartmentRequest,
     CreateReportRequest,
     DepartmentInfo,
+    DuplicateSuggestionResponse,
     ReportCategory,
     ReportDetailResponse,
     ReportImageResponse,
@@ -111,8 +112,8 @@ class ReportService:
 
         row = result.data[0]
 
-        # Parallel fetch of images, status events, and AI analysis
-        images_res, events_res, analysis_res = await asyncio.gather(
+        # Parallel fetch of images, status events, AI analysis, and duplicate suggestions
+        images_res, events_res, analysis_res, dupes_res = await asyncio.gather(
             _run(
                 lambda: client.table("report_images")
                 .select("*")
@@ -134,9 +135,31 @@ class ReportService:
                 .limit(1)
                 .execute()
             ),
+            _run(
+                lambda: client.table("duplicate_suggestions")
+                .select("*")
+                .eq("report_id", str(report_id))
+                .order("combined_score", desc=True)
+                .execute()
+            ),
         )
 
-        return self._to_detail_full(row, images_res.data, events_res.data, analysis_res.data)
+        # Batch-fetch candidate report details for duplicate suggestions
+        candidate_map: dict = {}
+        if dupes_res.data:
+            candidate_ids = [r["candidate_report_id"] for r in dupes_res.data]
+            cands = await _run(
+                lambda: client.table("reports")
+                .select("id, description, category, severity, status, address, created_at")
+                .in_("id", candidate_ids)
+                .execute()
+            )
+            candidate_map = {r["id"]: r for r in (cands.data or [])}
+
+        return self._to_detail_full(
+            row, images_res.data, events_res.data, analysis_res.data,
+            dupes_rows=dupes_res.data, candidate_map=candidate_map,
+        )
 
     async def list_reports(
         self,
@@ -379,6 +402,8 @@ class ReportService:
         image_rows: list[dict],
         event_rows: list[dict],
         analysis_rows: list[dict] | None = None,
+        dupes_rows: list[dict] | None = None,
+        candidate_map: dict | None = None,
     ) -> ReportDetailResponse:
         """Full mapping used for single-report detail endpoint."""
         images = [
@@ -416,6 +441,28 @@ class ReportService:
                 reasoning=a.get("reasoning"),
                 created_at=a["created_at"],
             )
+        # Map stored duplicate suggestions with candidate details
+        dupes: list[DuplicateSuggestionResponse] = []
+        cmap = candidate_map or {}
+        for d in (dupes_rows or []):
+            cid = d["candidate_report_id"]
+            c = cmap.get(cid, {})
+            dupes.append(
+                DuplicateSuggestionResponse(
+                    candidate_report_id=cid,
+                    candidate_description=c.get("description"),
+                    candidate_category=c.get("category"),
+                    candidate_severity=c.get("severity"),
+                    candidate_status=c.get("status"),
+                    candidate_address=c.get("address"),
+                    candidate_created_at=c.get("created_at"),
+                    semantic_score=float(d.get("semantic_score") or 0),
+                    distance_meters=float(d.get("distance_meters") or 0),
+                    combined_score=float(d.get("combined_score") or 0),
+                    reason=d.get("reason"),
+                )
+            )
+
         return ReportDetailResponse(
             id=row["id"],
             description=row["description"],
@@ -433,4 +480,5 @@ class ReportService:
             images=images,
             status_events=events,
             ai_analysis=ai_analysis,
+            duplicate_suggestions=dupes,
         )

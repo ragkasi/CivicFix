@@ -7,6 +7,7 @@ from app.schemas.reports import (
     AIAnalysisResponse,
     AssignDepartmentRequest,
     CreateReportRequest,
+    DuplicateSuggestionResponse,
     ReportCategory,
     ReportDetailResponse,
     ReportResponse,
@@ -15,6 +16,7 @@ from app.schemas.reports import (
     UpdateStatusRequest,
 )
 from app.services.ai_service import AIService
+from app.services.duplicate_service import DuplicateService
 from app.services.report_service import ReportService
 
 router = APIRouter()
@@ -26,6 +28,10 @@ def get_report_service() -> ReportService:
 
 def get_ai_service() -> AIService:
     return AIService()
+
+
+def get_duplicate_service() -> DuplicateService:
+    return DuplicateService()
 
 
 @router.post("", response_model=ReportResponse, status_code=201)
@@ -98,6 +104,26 @@ async def get_report(
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return report
+
+
+@router.post("/{report_id}/duplicates", response_model=list[DuplicateSuggestionResponse])
+async def find_report_duplicates(
+    report_id: UUID,
+    radius_meters: float = Query(500.0, gt=0, le=5000, description="Search radius in meters"),
+    similarity_threshold: float = Query(0.35, ge=0.0, le=1.0),
+    limit: int = Query(5, ge=1, le=20),
+    dup_service: DuplicateService = Depends(get_duplicate_service),
+):
+    """Run duplicate detection for a report and return candidates for admin review."""
+    try:
+        return await dup_service.find_duplicates(
+            str(report_id),
+            radius_meters=radius_meters,
+            similarity_threshold=similarity_threshold,
+            limit=limit,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 @router.post("/{report_id}/analyze", response_model=AIAnalysisResponse)

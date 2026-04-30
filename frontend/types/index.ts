@@ -1,6 +1,7 @@
 export type {
   AIAnalysis,
   AssignDepartmentBody,
+  DuplicateSuggestion,
   CreateReportBody,
   Department,
   DepartmentInfo,
