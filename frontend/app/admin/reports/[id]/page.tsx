@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   api,
+  type AIAnalysis,
   type Department,
   type ReportDetail,
   type ReportStatus,
@@ -29,6 +30,91 @@ function fmt(iso: string) {
   });
 }
 
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: "text-red-700 bg-red-50",
+  high: "text-orange-700 bg-orange-50",
+  medium: "text-amber-700 bg-amber-50",
+  low: "text-green-700 bg-green-50",
+};
+
+function AIAnalysisCard({ analysis }: { analysis: AIAnalysis | null }) {
+  if (!analysis) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>AI Analysis</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg px-4 py-5 text-center text-sm text-gray-400">
+            <p className="font-medium text-gray-500 mb-1">No AI analysis yet</p>
+            <p>Click &ldquo;Analyse with AI&rdquo; to classify this report automatically.</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>AI Analysis</CardTitle>
+          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+            AI suggested — not confirmed
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Category</p>
+            <p className="text-gray-800 font-medium">{CATEGORY_LABELS[analysis.ai_category ?? ""] ?? analysis.ai_category ?? "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Severity</p>
+            {analysis.ai_severity ? (
+              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${SEVERITY_COLORS[analysis.ai_severity] ?? "text-gray-700 bg-gray-100"}`}>
+                {analysis.ai_severity}
+              </span>
+            ) : <span className="text-gray-400">—</span>}
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Suggested Dept</p>
+            <p className="text-gray-800">{analysis.ai_department ?? "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Confidence</p>
+            <p className="text-gray-800">
+              {analysis.confidence_score != null
+                ? `${Math.round(analysis.confidence_score * 100)}%`
+                : "—"}
+            </p>
+          </div>
+        </div>
+
+        {analysis.ai_summary && (
+          <div>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Summary</p>
+            <p className="text-gray-700 bg-gray-50 rounded-lg px-3 py-2">{analysis.ai_summary}</p>
+          </div>
+        )}
+
+        {analysis.recommended_action && (
+          <div>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Recommended Action</p>
+            <p className="text-gray-700">{analysis.recommended_action}</p>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between text-xs text-gray-400 pt-1 border-t border-gray-100">
+          <span>Model: {analysis.reasoning?.model ?? "gpt-4o"}</span>
+          <span>{fmt(analysis.created_at)}</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ReportDetailPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -48,6 +134,10 @@ export default function ReportDetailPage() {
   const [selectedDept, setSelectedDept] = useState("");
   const [deptMsg, setDeptMsg] = useState<string | null>(null);
   const [deptLoading, setDeptLoading] = useState(false);
+
+  // AI analysis state
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeMsg, setAnalyzeMsg] = useState<string | null>(null);
 
   async function loadReport() {
     try {
@@ -73,6 +163,20 @@ export default function ReportDetailPage() {
     ]).finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function handleAnalyze() {
+    setAnalyzing(true);
+    setAnalyzeMsg(null);
+    try {
+      await api.reports.analyze(id);
+      await loadReport(); // Refresh to pick up updated category/severity + ai_analysis
+      setAnalyzeMsg("AI analysis complete.");
+    } catch (e) {
+      setAnalyzeMsg(e instanceof Error ? e.message : "AI analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
 
   async function handleStatusUpdate(e: React.FormEvent) {
     e.preventDefault();
@@ -218,16 +322,8 @@ export default function ReportDetailPage() {
             </CardContent>
           </Card>
 
-          {/* AI Analysis placeholder */}
-          <Card>
-            <CardHeader><CardTitle>AI Analysis</CardTitle></CardHeader>
-            <CardContent>
-              <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg px-4 py-6 text-center text-sm text-gray-400">
-                <p className="font-medium text-gray-500 mb-1">Pending AI Analysis</p>
-                <p>AI classification, severity scoring, and department routing will appear here in Phase 5.</p>
-              </div>
-            </CardContent>
-          </Card>
+          {/* AI Analysis panel */}
+          <AIAnalysisCard analysis={report.ai_analysis} />
 
           {/* Status history */}
           <Card>
@@ -341,6 +437,28 @@ export default function ReportDetailPage() {
                   </p>
                 )}
               </form>
+            </CardContent>
+          </Card>
+
+          {/* Analyze with AI */}
+          <Card>
+            <CardHeader><CardTitle>AI Triage</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-gray-500">
+                Run AI classification to auto-fill category, severity, and department suggestion.
+              </p>
+              <button
+                onClick={handleAnalyze}
+                disabled={analyzing}
+                className="w-full py-2 text-sm font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+              >
+                {analyzing ? "Analysing…" : "Analyse with AI"}
+              </button>
+              {analyzeMsg && (
+                <p className={`text-sm text-center ${analyzeMsg.includes("complete") ? "text-green-600" : "text-red-600"}`}>
+                  {analyzeMsg}
+                </p>
+              )}
             </CardContent>
           </Card>
 

@@ -59,8 +59,12 @@ export const api = {
       return fetchApi<ReportDetail[]>(`/api/reports${qs}`);
     },
 
-    /** Get a single report by ID (admin — includes images and status events). */
+    /** Get a single report by ID (admin — includes images, events, and AI analysis). */
     get: (id: string) => fetchApi<ReportDetail>(`/api/reports/${id}`),
+
+    /** Manually trigger or re-trigger AI analysis for a report (admin). */
+    analyze: (id: string) =>
+      fetchApi<AIAnalysis>(`/api/reports/${id}/analyze`, { method: "POST" }),
 
     /** Update report status (admin). */
     updateStatus: (id: string, body: UpdateStatusBody) =>
@@ -183,7 +187,7 @@ export interface ReportDetail extends ReportResponse {
   updated_at: string;
   images: ReportImage[];
   status_events: StatusEvent[];
-  ai_analysis: null;
+  ai_analysis: AIAnalysis | null;
 }
 
 export interface ListReportsParams {
@@ -213,6 +217,19 @@ export interface Department {
   description: string | null;
   contact_email: string | null;
   category_coverage: string[];
+  created_at: string;
+}
+
+export interface AIAnalysis {
+  id: string;
+  report_id: string;
+  ai_category: string | null;
+  ai_severity: string | null;
+  ai_department: string | null;
+  ai_summary: string | null;
+  recommended_action: string | null;
+  confidence_score: number | null;
+  reasoning: { model?: string; has_image?: boolean } | null;
   created_at: string;
 }
 

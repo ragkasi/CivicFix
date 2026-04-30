@@ -60,6 +60,20 @@ class StatusEventResponse(BaseModel):
     created_at: datetime
 
 
+class AIAnalysisResponse(BaseModel):
+    """AI triage output stored in the ai_analysis table."""
+    id: UUID
+    report_id: UUID
+    ai_category: str | None = None
+    ai_severity: str | None = None
+    ai_department: str | None = None
+    ai_summary: str | None = None
+    recommended_action: str | None = None
+    confidence_score: float | None = None
+    reasoning: dict | None = None
+    created_at: datetime
+
+
 # ─── Request schemas ──────────────────────────────────────────────────────────
 
 class CreateReportRequest(BaseModel):
@@ -115,4 +129,4 @@ class ReportDetailResponse(BaseModel):
     updated_at: datetime
     images: list[ReportImageResponse] = []
     status_events: list[StatusEventResponse] = []
-    ai_analysis: None = None  # Phase 5
+    ai_analysis: AIAnalysisResponse | None = None

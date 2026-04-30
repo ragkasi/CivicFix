@@ -2,9 +2,13 @@
 
 AI-powered civic issue reporting and routing platform. Residents submit infrastructure issues with photos and map locations; AI classifies and routes them; city staff triage, assign, and resolve via an admin dashboard with map view.
 
-## Current Phase: Phase 5 — Map and Geospatial Report View
+## Current Phase: Phase 6 — AI Triage Pipeline
 
-The full reporting + triage loop is working with a map view:
+The full reporting + AI triage + admin loop is working:
+- AI classifies reports in the background after submission (category, severity, department, summary)
+- Embeddings stored in report_embeddings for future duplicate detection
+- Admin can manually re-run AI analysis via "Analyse with AI" button
+- All Phase 5 map features still work
 - Residents submit reports using a Mapbox location picker at `/report/new`
 - Admins view all reports in a table at `/admin`
 - Admins view reports as a severity-colored pin map at `/admin/map`
@@ -25,11 +29,15 @@ supabase/migrations/003_geospatial_functions.sql   ← Phase 5 new
 supabase/seed/seed_departments.sql
 ```
 
-### 2. Configure Environment Variables
+### 2. Apply AI Migration (new in Phase 6)
+Run `supabase/migrations/003_geospatial_functions.sql` if not already applied.
+
+### 3. Configure Environment Variables
 ```bash
 # Backend
 cd backend && cp ../.env.example .env
 # Fill in: DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
+# AI (Phase 6): OPENAI_API_KEY=sk-... AI_MODEL=gpt-4o EMBEDDING_MODEL=text-embedding-3-small
 
 # Frontend
 cd frontend && cp ../.env.example .env.local
@@ -102,8 +110,24 @@ GET /api/reports?bbox=-83.05,39.98,-82.95,40.02
 ```
 Returns reports within the bounding box (minLng,minLat,maxLng,maxLat). Invalid bbox → 400.
 
+## AI Pipeline (Phase 6)
+
+When a resident submits a report:
+1. Response returns immediately (the AI does NOT block submission)
+2. In the background: GPT-4o classifies the report (text + image if provided)
+3. Results stored in `ai_analysis` table
+4. `reports.category` and `reports.severity` updated with AI suggestions
+5. Embedding generated and stored in `report_embeddings` for future duplicate detection
+
+AI outputs are clearly labeled "AI suggested — not confirmed" in the admin UI.
+Admins can override category, severity, and department at any time.
+
+To re-run AI analysis on an existing report: open `/admin/reports/[id]` → click "Analyse with AI".
+
+Without `OPENAI_API_KEY`, the pipeline uses a safe fallback (category=other, severity=medium) and logs a warning.
+
 ## Current Limitations
-- No AI classification yet (Phase 6)
+- No duplicate detection yet (Phase 7)
 - No duplicate detection yet (Phase 6)
 - No authentication (Phase 7)
 - No realtime updates (Phase 7)

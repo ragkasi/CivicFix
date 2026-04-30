@@ -12,10 +12,11 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_storage_bucket: str = "report-images"
 
-    # AI (placeholders — wired in Phase 4)
+    # AI — Phase 6
+    # Set AI_MODEL=gpt-4o for vision+text classification (recommended for demo)
+    # Set AI_MODEL=gpt-4o-mini for cheaper text-only classification
     openai_api_key: str = ""
-    ai_model: str = "gpt-4o-mini"
-    vision_model: str = "gpt-4o"
+    ai_model: str = "gpt-4o"
     embedding_model: str = "text-embedding-3-small"
 
     # App

@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.schemas.geospatial import NearbyReportResponse
 from app.schemas.reports import (
+    AIAnalysisResponse,
     AssignDepartmentRequest,
     CreateReportRequest,
     ReportCategory,
@@ -13,6 +14,7 @@ from app.schemas.reports import (
     ReportStatus,
     UpdateStatusRequest,
 )
+from app.services.ai_service import AIService
 from app.services.report_service import ReportService
 
 router = APIRouter()
@@ -22,13 +24,22 @@ def get_report_service() -> ReportService:
     return ReportService()
 
 
+def get_ai_service() -> AIService:
+    return AIService()
+
+
 @router.post("", response_model=ReportResponse, status_code=201)
 async def create_report(
     body: CreateReportRequest,
+    background_tasks: BackgroundTasks,
     service: ReportService = Depends(get_report_service),
+    ai_service: AIService = Depends(get_ai_service),
 ):
     try:
-        return await service.create_report(body)
+        report = await service.create_report(body)
+        # AI pipeline runs after response is sent — does not block the resident
+        background_tasks.add_task(ai_service.run_pipeline, str(report.id))
+        return report
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
@@ -60,13 +71,12 @@ async def list_reports(
         raise HTTPException(status_code=503, detail=str(exc))
 
 
-# /nearby MUST be defined before /{report_id} so FastAPI doesn't treat
-# "nearby" as a UUID and route it to get_report.
+# /nearby MUST be defined before /{report_id}
 @router.get("/nearby", response_model=list[NearbyReportResponse])
 async def list_nearby_reports(
-    lat: float = Query(..., ge=-90, le=90, description="Center latitude"),
-    lng: float = Query(..., ge=-180, le=180, description="Center longitude"),
-    radius_km: float = Query(1.0, gt=0, le=50, description="Search radius in km"),
+    lat: float = Query(..., ge=-90, le=90),
+    lng: float = Query(..., ge=-180, le=180),
+    radius_km: float = Query(1.0, gt=0, le=50),
     limit: int = Query(50, ge=1, le=200),
     service: ReportService = Depends(get_report_service),
 ):
@@ -88,6 +98,21 @@ async def get_report(
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return report
+
+
+@router.post("/{report_id}/analyze", response_model=AIAnalysisResponse)
+async def analyze_report(
+    report_id: UUID,
+    ai_service: AIService = Depends(get_ai_service),
+):
+    """Manually trigger or re-trigger AI analysis for an existing report."""
+    try:
+        result = await ai_service.analyze_report(str(report_id))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return result
 
 
 @router.patch("/{report_id}/status", response_model=ReportDetailResponse)

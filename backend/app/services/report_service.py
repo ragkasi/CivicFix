@@ -5,6 +5,7 @@ from uuid import UUID
 from app.db.supabase import get_supabase_client
 from app.schemas.geospatial import NearbyReportResponse
 from app.schemas.reports import (
+    AIAnalysisResponse,
     AssignDepartmentRequest,
     CreateReportRequest,
     DepartmentInfo,
@@ -94,10 +95,10 @@ class ReportService:
     # ─── Read ──────────────────────────────────────────────────────────────────
 
     async def get_report(self, report_id: UUID) -> ReportDetailResponse | None:
-        """Fetch full report detail including images, status events, and department."""
+        """Fetch full report detail including images, status events, AI analysis, and department."""
         client = self._client()
 
-        # Join departments via FK for the department object
+        # Join departments via FK
         result = await _run(
             lambda: client.table("reports")
             .select("*, departments(id, slug, name)")
@@ -110,8 +111,8 @@ class ReportService:
 
         row = result.data[0]
 
-        # Parallel fetch of images and status events
-        images_res, events_res = await asyncio.gather(
+        # Parallel fetch of images, status events, and AI analysis
+        images_res, events_res, analysis_res = await asyncio.gather(
             _run(
                 lambda: client.table("report_images")
                 .select("*")
@@ -126,9 +127,16 @@ class ReportService:
                 .order("created_at")
                 .execute()
             ),
+            _run(
+                lambda: client.table("ai_analysis")
+                .select("*")
+                .eq("report_id", str(report_id))
+                .limit(1)
+                .execute()
+            ),
         )
 
-        return self._to_detail_full(row, images_res.data, events_res.data)
+        return self._to_detail_full(row, images_res.data, events_res.data, analysis_res.data)
 
     async def list_reports(
         self,
@@ -370,6 +378,7 @@ class ReportService:
         row: dict,
         image_rows: list[dict],
         event_rows: list[dict],
+        analysis_rows: list[dict] | None = None,
     ) -> ReportDetailResponse:
         """Full mapping used for single-report detail endpoint."""
         images = [
@@ -392,6 +401,21 @@ class ReportService:
             )
             for ev in event_rows
         ]
+        ai_analysis = None
+        if analysis_rows:
+            a = analysis_rows[0]
+            ai_analysis = AIAnalysisResponse(
+                id=a["id"],
+                report_id=a["report_id"],
+                ai_category=a.get("ai_category"),
+                ai_severity=a.get("ai_severity"),
+                ai_department=a.get("ai_department"),
+                ai_summary=a.get("ai_summary"),
+                recommended_action=a.get("recommended_action"),
+                confidence_score=a.get("confidence_score"),
+                reasoning=a.get("reasoning"),
+                created_at=a["created_at"],
+            )
         return ReportDetailResponse(
             id=row["id"],
             description=row["description"],
@@ -408,4 +432,5 @@ class ReportService:
             updated_at=row["updated_at"],
             images=images,
             status_events=events,
+            ai_analysis=ai_analysis,
         )
