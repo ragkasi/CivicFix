@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, type TrackingReport } from "@/lib/api";
 import { StatusBadge, SeverityBadge } from "@/components/ui/badge";
+import { useRealtimeTracking } from "@/hooks/useRealtimeTracking";
 
 const CATEGORY_LABELS: Record<string, string> = {
   pothole:        "Pothole / Road Damage",
@@ -38,21 +39,24 @@ export default function TrackPage() {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchReport = useCallback(() => {
     if (!token) return;
-
     api.tracking
       .get(token)
       .then((data) => setReport(data))
       .catch((err: Error) => {
-        if (err.message.includes("404")) {
-          setNotFound(true);
-        } else {
-          setError("Unable to load report status. Please try again later.");
-        }
+        if (err.message.includes("404")) setNotFound(true);
+        else setError("Unable to load report status. Please try again later.");
       })
       .finally(() => setLoading(false));
   }, [token]);
+
+  useEffect(() => {
+    fetchReport();
+  }, [fetchReport]);
+
+  // Realtime: re-fetch (not use payload) when the report row is updated
+  const { status: rtStatus } = useRealtimeTracking(token, fetchReport);
 
   // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
@@ -121,7 +125,14 @@ export default function TrackPage() {
           >
             &larr; Back to home
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900">Report Status</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-gray-900">Report Status</h1>
+            {rtStatus === "connected" && (
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                ● Live
+              </span>
+            )}
+          </div>
           <p className="text-gray-500 text-sm mt-1">
             Tracking ID:{" "}
             <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">

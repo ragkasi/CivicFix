@@ -66,6 +66,13 @@ export const api = {
     analyze: (id: string) =>
       fetchApi<AIAnalysis>(`/api/reports/${id}/analyze`, { method: "POST" }),
 
+    /** Manually send a status notification to the resident (admin). */
+    notify: (id: string, body?: { public_note?: string }) =>
+      fetchApi<NotifyResidentResponse>(`/api/reports/${id}/notify`, {
+        method: "POST",
+        body: JSON.stringify(body ?? {}),
+      }),
+
     /** Run duplicate detection for a report (admin). */
     findDuplicates: (
       id: string,
@@ -240,6 +247,19 @@ export interface Department {
   contact_email: string | null;
   category_coverage: string[];
   created_at: string;
+}
+
+export interface NotificationResult {
+  channel: string;
+  recipient: string;
+  status: string;
+  is_mock: boolean;
+  error?: string | null;
+}
+
+export interface NotifyResidentResponse {
+  results: NotificationResult[];
+  count: number;
 }
 
 export interface DuplicateSuggestion {

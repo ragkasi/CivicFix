@@ -25,12 +25,16 @@ class Settings(BaseSettings):
     resident_app_url: str = "http://localhost:3000"
     admin_app_url: str = "http://localhost:3000/admin"
 
-    # Notifications (placeholders — wired in Phase 6)
-    twilio_account_sid: str = ""
-    twilio_auth_token: str = ""
-    twilio_phone_number: str = ""
+    # Notifications — Phase 9
+    # Email: set EMAIL_PROVIDER=resend + EMAIL_API_KEY for real sends
+    # SMS: set TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + TWILIO_PHONE_NUMBER
+    # Without provider config, notifications are mock-logged and not sent
+    email_provider: str = ""          # "resend" | "sendgrid" | "" (mock)
     email_api_key: str = ""
     email_from: str = "no-reply@civicfix.local"
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_phone_number: str = ""     # Twilio "From" number
 
     # MCP
     mcp_server_name: str = "city-ops-mcp"

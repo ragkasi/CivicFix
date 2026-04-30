@@ -9,6 +9,7 @@ import {
   type AIAnalysis,
   type Department,
   type DuplicateSuggestion,
+  type NotificationResult,
   type ReportDetail,
   type ReportStatus,
 } from "@/lib/api";
@@ -212,6 +213,11 @@ export default function ReportDetailPage() {
   const [checkingDupes, setCheckingDupes] = useState(false);
   const [dupesMsg, setDupesMsg] = useState<string | null>(null);
 
+  // Notify resident state
+  const [notifying, setNotifying] = useState(false);
+  const [notifyResults, setNotifyResults] = useState<NotificationResult[] | null>(null);
+  const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
+
   async function loadReport() {
     try {
       const r = await api.reports.get(id);
@@ -236,6 +242,25 @@ export default function ReportDetailPage() {
     ]).finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function handleNotifyResident() {
+    setNotifying(true);
+    setNotifyResults(null);
+    setNotifyMsg(null);
+    try {
+      const res = await api.reports.notify(id);
+      setNotifyResults(res.results);
+      if (res.count === 0) {
+        setNotifyMsg("No contact info on file — no notification sent.");
+      } else {
+        setNotifyMsg(`${res.count} notification${res.count !== 1 ? "s" : ""} processed.`);
+      }
+    } catch (e) {
+      setNotifyMsg(e instanceof Error ? e.message : "Notification failed");
+    } finally {
+      setNotifying(false);
+    }
+  }
 
   async function handleCheckDuplicates() {
     setCheckingDupes(true);
@@ -548,6 +573,41 @@ export default function ReportDetailPage() {
                 <p className={`text-sm text-center ${analyzeMsg.includes("complete") ? "text-green-600" : "text-red-600"}`}>
                   {analyzeMsg}
                 </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Notify Resident */}
+          <Card>
+            <CardHeader><CardTitle>Notify Resident</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-gray-500">
+                Send a status update to the resident via email/SMS if contact info is on file.
+              </p>
+              <button
+                onClick={handleNotifyResident}
+                disabled={notifying}
+                className="w-full py-2 text-sm font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              >
+                {notifying ? "Sending…" : "Notify Resident"}
+              </button>
+              {notifyMsg && (
+                <p className={`text-sm text-center ${notifyMsg.includes("No contact") ? "text-gray-500" : notifyMsg.includes("failed") || notifyMsg.includes("Failed") ? "text-red-600" : "text-green-600"}`}>
+                  {notifyMsg}
+                </p>
+              )}
+              {notifyResults && notifyResults.length > 0 && (
+                <ul className="text-xs space-y-1">
+                  {notifyResults.map((r, i) => (
+                    <li key={i} className={`flex items-center gap-2 ${r.status === "failed" ? "text-red-600" : "text-gray-600"}`}>
+                      <span>{r.channel === "email" ? "📧" : "📱"}</span>
+                      <span className="capitalize">{r.channel}</span>
+                      <span>·</span>
+                      <span>{r.status}{r.is_mock ? " (mock)" : ""}</span>
+                      {r.error && <span className="text-red-500">— {r.error}</span>}
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>

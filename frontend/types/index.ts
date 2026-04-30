@@ -8,6 +8,8 @@ export type {
   ListReportsParams,
   NearbyParams,
   NearbyReport,
+  NotificationResult,
+  NotifyResidentResponse,
   ReportCategory,
   ReportDetail,
   ReportImage,

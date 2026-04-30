@@ -15,8 +15,10 @@ from app.schemas.reports import (
     ReportStatus,
     UpdateStatusRequest,
 )
+from app.schemas.notifications import NotifyResidentRequest, NotifyResidentResponse
 from app.services.ai_service import AIService
 from app.services.duplicate_service import DuplicateService
+from app.services.notification_service import NotificationService
 from app.services.report_service import ReportService
 
 router = APIRouter()
@@ -32,6 +34,10 @@ def get_ai_service() -> AIService:
 
 def get_duplicate_service() -> DuplicateService:
     return DuplicateService()
+
+
+def get_notification_service() -> NotificationService:
+    return NotificationService()
 
 
 @router.post("", response_model=ReportResponse, status_code=201)
@@ -145,7 +151,9 @@ async def analyze_report(
 async def update_report_status(
     report_id: UUID,
     body: UpdateStatusRequest,
+    background_tasks: BackgroundTasks,
     service: ReportService = Depends(get_report_service),
+    notif_service: NotificationService = Depends(get_notification_service),
 ):
     try:
         report = await service.update_status(report_id, body)
@@ -153,7 +161,34 @@ async def update_report_status(
         raise HTTPException(status_code=503, detail=str(exc))
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
+    # Notify resident in background — does not block or fail the status update
+    background_tasks.add_task(
+        notif_service.send_status_update,
+        str(report_id),
+        body.status.value,
+        body.public_note,
+    )
     return report
+
+
+@router.post("/{report_id}/notify", response_model=NotifyResidentResponse)
+async def notify_resident(
+    report_id: UUID,
+    body: NotifyResidentRequest = None,
+    notif_service: NotificationService = Depends(get_notification_service),
+):
+    """Manually send a status notification to the resident."""
+    if body is None:
+        body = NotifyResidentRequest()
+    try:
+        results = await notif_service.send_status_update(
+            str(report_id),
+            new_status=None,  # Fetches current status from DB
+            public_note=body.public_note,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    return NotifyResidentResponse(results=results, count=len(results))
 
 
 @router.patch("/{report_id}/department", response_model=ReportDetailResponse)

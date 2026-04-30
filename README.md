@@ -2,13 +2,13 @@
 
 AI-powered civic issue reporting and routing platform. Residents submit infrastructure issues with photos and map locations; AI classifies and routes them; city staff triage, assign, and resolve via an admin dashboard with map view.
 
-## Current Phase: Phase 8 — Supabase Realtime Dashboard Updates
+## Current Phase: Phase 9 — Resident Tracking and Notifications
 
-The admin dashboard now updates in real-time via Supabase Realtime:
-- New report submissions show a "New reports available" banner
-- Status/category/severity updates appear in-place in the table
-- Live connection indicator in the dashboard header
-- Graceful degradation when Supabase env vars are missing
+Residents receive status-change notifications and their tracking page updates live:
+- Admin "Notify Resident" button sends email/SMS when contact info is on file
+- Notifications logged to the `notifications` table with provider response
+- Resident tracking page shows "● Live" and updates when status changes
+- Without provider config, notifications are mock-logged (no real messages sent)
 - pgvector semantic similarity + PostGIS radius used to find duplicate reports
 - Duplicate suggestions stored in `duplicate_suggestions` table
 - "Possible Duplicates" panel on admin report detail with combined match score
