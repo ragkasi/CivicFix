@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.schemas.geospatial import NearbyReportResponse
 from app.schemas.reports import (
     AssignDepartmentRequest,
     CreateReportRequest,
@@ -39,7 +40,7 @@ async def list_reports(
     severity: ReportSeverity | None = Query(None),
     department_id: UUID | None = Query(None),
     bbox: str | None = Query(None, description="minLng,minLat,maxLng,maxLat"),
-    limit: int = Query(20, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=500),
     offset: int = Query(0, ge=0),
     service: ReportService = Depends(get_report_service),
 ):
@@ -53,6 +54,24 @@ async def list_reports(
             limit=limit,
             offset=offset,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+# /nearby MUST be defined before /{report_id} so FastAPI doesn't treat
+# "nearby" as a UUID and route it to get_report.
+@router.get("/nearby", response_model=list[NearbyReportResponse])
+async def list_nearby_reports(
+    lat: float = Query(..., ge=-90, le=90, description="Center latitude"),
+    lng: float = Query(..., ge=-180, le=180, description="Center longitude"),
+    radius_km: float = Query(1.0, gt=0, le=50, description="Search radius in km"),
+    limit: int = Query(50, ge=1, le=200),
+    service: ReportService = Depends(get_report_service),
+):
+    try:
+        return await service.list_nearby_reports(lat=lat, lng=lng, radius_km=radius_km, limit=limit)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 

@@ -74,12 +74,20 @@ export default function AdminPage() {
           </Link>
           <h1 className="text-2xl font-bold text-gray-900 mt-0.5">Admin Dashboard</h1>
         </div>
-        <Link
-          href="/report/new"
-          className="text-sm font-medium text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-        >
-          + New Report
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/map"
+            className="text-sm font-medium text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            🗺️ Map View
+          </Link>
+          <Link
+            href="/report/new"
+            className="text-sm font-medium text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+          >
+            + New Report
+          </Link>
+        </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-6 space-y-4">

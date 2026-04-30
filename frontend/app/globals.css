@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Mapbox GL JS — loaded globally so map components never flash unstyled */
+@import "mapbox-gl/dist/mapbox-gl.css";
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

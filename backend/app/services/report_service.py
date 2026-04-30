@@ -1,8 +1,9 @@
-"""Report service — Phase 4 complete implementation."""
+"""Report service — Phase 5 complete implementation."""
 import asyncio
 from uuid import UUID
 
 from app.db.supabase import get_supabase_client
+from app.schemas.geospatial import NearbyReportResponse
 from app.schemas.reports import (
     AssignDepartmentRequest,
     CreateReportRequest,
@@ -21,6 +22,27 @@ from app.schemas.tracking import TrackingResponse
 
 def _run(fn):
     return asyncio.to_thread(fn)
+
+
+def _parse_bbox(bbox: str) -> tuple[float, float, float, float]:
+    """Parse 'minLng,minLat,maxLng,maxLat' into four floats.
+
+    Raises ValueError with a clear message for invalid input.
+    """
+    parts = bbox.split(",")
+    if len(parts) != 4:
+        raise ValueError(
+            "bbox must be 'minLng,minLat,maxLng,maxLat' (4 comma-separated numbers)"
+        )
+    try:
+        min_lng, min_lat, max_lng, max_lat = map(float, parts)
+    except ValueError:
+        raise ValueError("All bbox values must be numeric")
+    if not (-180 <= min_lng <= 180 and -180 <= max_lng <= 180):
+        raise ValueError("Longitude values must be between -180 and 180")
+    if not (-90 <= min_lat <= 90 and -90 <= max_lat <= 90):
+        raise ValueError("Latitude values must be between -90 and 90")
+    return min_lng, min_lat, max_lng, max_lat
 
 
 class ReportService:
@@ -118,6 +140,12 @@ class ReportService:
         limit: int = 50,
         offset: int = 0,
     ) -> list[ReportDetailResponse]:
+        # When a bbox is provided, delegate to the PostGIS RPC function.
+        # The RPC result does not include a departments join; department will be None.
+        if bbox:
+            min_lng, min_lat, max_lng, max_lat = _parse_bbox(bbox)
+            return await self._list_in_bbox(min_lng, min_lat, max_lng, max_lat, limit)
+
         client = self._client()
 
         def _query():
@@ -136,11 +164,73 @@ class ReportService:
                 q = q.eq("severity", severity.value)
             if department_id:
                 q = q.eq("department_id", str(department_id))
-            # bbox filtering via PostGIS deferred to Phase 5 (map)
             return q.execute()
 
         result = await _run(_query)
         return [self._to_detail(row) for row in result.data]
+
+    async def _list_in_bbox(
+        self,
+        min_lng: float,
+        min_lat: float,
+        max_lng: float,
+        max_lat: float,
+        limit: int = 200,
+    ) -> list[ReportDetailResponse]:
+        """Fetch reports inside a bounding box using the reports_in_bbox RPC."""
+        client = self._client()
+        result = await _run(
+            lambda: client.rpc(
+                "reports_in_bbox",
+                {
+                    "min_lng": min_lng,
+                    "min_lat": min_lat,
+                    "max_lng": max_lng,
+                    "max_lat": max_lat,
+                    "result_limit": limit,
+                },
+            ).execute()
+        )
+        return [self._to_detail(row) for row in result.data]
+
+    async def list_nearby_reports(
+        self,
+        lat: float,
+        lng: float,
+        radius_km: float = 1.0,
+        limit: int = 50,
+    ) -> list[NearbyReportResponse]:
+        """Fetch reports within a radius using the nearby_reports RPC."""
+        client = self._client()
+        result = await _run(
+            lambda: client.rpc(
+                "nearby_reports",
+                {
+                    "input_lat": lat,
+                    "input_lng": lng,
+                    "radius_meters": radius_km * 1000,
+                    "result_limit": limit,
+                },
+            ).execute()
+        )
+        return [
+            NearbyReportResponse(
+                id=row["id"],
+                description=row["description"],
+                category=row.get("category"),
+                severity=row.get("severity"),
+                status=row["status"],
+                latitude=row["latitude"],
+                longitude=row["longitude"],
+                address=row.get("address"),
+                department_id=row.get("department_id"),
+                tracking_token=row["public_tracking_token"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+                distance_meters=row["distance_meters"],
+            )
+            for row in result.data
+        ]
 
     async def get_report_by_tracking_token(
         self, token: str

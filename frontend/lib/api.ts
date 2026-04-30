@@ -85,6 +85,19 @@ export const api = {
     get: (token: string) =>
       fetchApi<TrackingReport>(`/api/tracking/${token}`),
   },
+
+  geospatial: {
+    /** Find reports within a radius of a point. */
+    nearby: (params: NearbyParams) => {
+      const qs = new URLSearchParams({
+        lat: String(params.lat),
+        lng: String(params.lng),
+        radius_km: String(params.radius_km ?? 1.0),
+        limit: String(params.limit ?? 50),
+      }).toString();
+      return fetchApi<NearbyReport[]>(`/api/reports/nearby?${qs}`);
+    },
+  },
 };
 
 // ─── Enums / union types ──────────────────────────────────────────────────────
@@ -201,6 +214,39 @@ export interface Department {
   contact_email: string | null;
   category_coverage: string[];
   created_at: string;
+}
+
+export interface NearbyParams {
+  lat: number;
+  lng: number;
+  radius_km?: number;
+  limit?: number;
+}
+
+export interface NearbyReport {
+  id: string;
+  description: string;
+  category: ReportCategory | null;
+  severity: ReportSeverity | null;
+  status: ReportStatus;
+  latitude: number;
+  longitude: number;
+  address: string | null;
+  department_id: string | null;
+  tracking_token: string;
+  created_at: string;
+  updated_at: string;
+  distance_meters: number;
+}
+
+export interface ReportMapPoint {
+  id: string;
+  status: ReportStatus;
+  category: ReportCategory | null;
+  severity: ReportSeverity | null;
+  latitude: number;
+  longitude: number;
+  address: string | null;
 }
 
 export interface TrackingReport {
